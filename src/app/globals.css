@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* HomeSocial Gold & Black theme */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-[#070707] text-white;
+}
+
+/* Gold links; “sub font” (secondary text) is white via utilities below */
+a { @apply text-[#D4AF37] hover:text-[#E6C75A]; }
