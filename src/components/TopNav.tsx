@@ -25,37 +25,65 @@ export function TopNav() {
 
   return (
     <div className="sticky top-0 z-20 border-b border-[#2a2a2a] bg-black/70 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/homesocial-logo.png"
-              alt="HomeSocial"
-              width={34}
-              height={34}
-              priority
-              unoptimized
-              className="h-[34px] w-[34px] rounded-sm"
-            />
-            <span className="text-lg font-extrabold tracking-tight text-[#D4AF37]">
-              HomeSocial
-            </span>
-          </Link>
+      {/* Full-width row (no max-w container) */}
+      <div className="w-full px-6 py-4">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-6">
+            <Link href="/" className="flex items-center gap-3">
+              <Image
+                src="/homesocial-logo.png"
+                alt="HomeSocial"
+                width={72}
+                height={72}
+                priority
+                unoptimized
+                className="h-[72px] w-[72px] rounded-md"
+              />
+              <span className="text-2xl font-extrabold tracking-tight text-[#D4AF37]">
+                HomeSocial
+              </span>
+            </Link>
 
-          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/create">Create Listing</Link>
-          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/messages">Messages</Link>
-          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/profile">Profile</Link>
+            <nav className="hidden items-center gap-5 md:flex">
+              <Link className="text-base text-white/80 hover:text-[#D4AF37]" href="/create">
+                Create Listing
+              </Link>
+              <Link className="text-base text-white/80 hover:text-[#D4AF37]" href="/messages">
+                Messages
+              </Link>
+              <Link className="text-base text-white/80 hover:text-[#D4AF37]" href="/profile">
+                Profile
+              </Link>
+            </nav>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {email ? (
+              <>
+                <span className="hidden text-sm text-white/70 lg:block">{email}</span>
+                <Button variant="secondary" onClick={signOut}>
+                  Sign out
+                </Button>
+              </>
+            ) : (
+              <Link href="/login">
+                <Button>Sign in</Button>
+              </Link>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {email ? (
-            <>
-              <span className="hidden text-sm text-white/70 sm:block">{email}</span>
-              <Button variant="secondary" onClick={signOut}>Sign out</Button>
-            </>
-          ) : (
-            <Link href="/login"><Button>Sign in</Button></Link>
-          )}
+        {/* Mobile nav row */}
+        <div className="mt-3 flex items-center gap-4 md:hidden">
+          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/create">
+            Create Listing
+          </Link>
+          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/messages">
+            Messages
+          </Link>
+          <Link className="text-sm text-white/80 hover:text-[#D4AF37]" href="/profile">
+            Profile
+          </Link>
         </div>
       </div>
     </div>
