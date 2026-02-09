@@ -33,11 +33,11 @@ export function TopNav() {
               <Image
                 src="/homesocial-logo.png"
                 alt="HomeSocial"
-                width={72}
-                height={72}
+                width={120}
+                height={120}
                 priority
                 unoptimized
-                className="h-[72px] w-[72px] rounded-md"
+                className="h-[120px] w-[120px] rounded-md"
               />
               <span className="text-2xl font-extrabold tracking-tight text-[#D4AF37]">
                 HomeSocial
