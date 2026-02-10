@@ -32,8 +32,8 @@ export function TopNav() {
             <Image
               src="/homesocial-logo.png"
               alt="HomeSocial"
-              width={72}
-              height={72}
+              width={150}
+              height={150}
               className="h-14 w-14 rounded-md object-contain sm:h-16 sm:w-16"
               priority
             />
