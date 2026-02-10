@@ -18,21 +18,24 @@ type ListingRow = {
   state: string | null;
   zip: string | null;
   description: string | null;
+
+  photo_urls: string[];
+  video_urls: string[];
+  thumbnail_url: string | null;
 };
 
 export function EditListingForm({ listingId }: { listingId: string }) {
   const router = useRouter();
-
-  // ✅ Create Supabase client ONCE (prevents effect re-run loop)
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
 
   const [row, setRow] = useState<ListingRow | null>(null);
 
-  // Form state
+  // Form fields
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState<string>("");
   const [beds, setBeds] = useState<string>("");
@@ -44,12 +47,18 @@ export function EditListingForm({ listingId }: { listingId: string }) {
   const [zip, setZip] = useState<string>("");
   const [description, setDescription] = useState<string>("");
 
+  // Media state
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [videoUrls, setVideoUrls] = useState<string[]>([]);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       setLoading(true);
       setErr(null);
+      setOk(null);
 
       const { data: userData, error: userErr } = await supabase.auth.getUser();
       const uid = userData.user?.id ?? null;
@@ -65,11 +74,11 @@ export function EditListingForm({ listingId }: { listingId: string }) {
         return;
       }
 
-      // ✅ IMPORTANT: only select listings owned by this user
+      // Only load if it’s your listing
       const { data, error } = await supabase
         .from("listings")
         .select(
-          "id,owner_id,title,price,beds,baths,sqft,address,city,state,zip,description"
+          "id,owner_id,title,price,beds,baths,sqft,address,city,state,zip,description,photo_urls,video_urls,thumbnail_url"
         )
         .eq("id", listingId)
         .eq("owner_id", uid)
@@ -85,26 +94,29 @@ export function EditListingForm({ listingId }: { listingId: string }) {
       }
 
       if (!data) {
-        // Not found or not yours
         setErr("Listing not found or you don’t have permission to edit it.");
         setRow(null);
         setLoading(false);
         return;
       }
 
-      setRow(data as ListingRow);
+      const r = data as ListingRow;
+      setRow(r);
 
-      // hydrate form
-      setTitle(data.title ?? "");
-      setPrice(typeof data.price === "number" ? String(data.price) : "");
-      setBeds(typeof data.beds === "number" ? String(data.beds) : "");
-      setBaths(typeof data.baths === "number" ? String(data.baths) : "");
-      setSqft(typeof data.sqft === "number" ? String(data.sqft) : "");
-      setAddress(data.address ?? "");
-      setCity(data.city ?? "");
-      setStateUS(data.state ?? "");
-      setZip(data.zip ?? "");
-      setDescription(data.description ?? "");
+      setTitle(r.title ?? "");
+      setPrice(typeof r.price === "number" ? String(r.price) : "");
+      setBeds(typeof r.beds === "number" ? String(r.beds) : "");
+      setBaths(typeof r.baths === "number" ? String(r.baths) : "");
+      setSqft(typeof r.sqft === "number" ? String(r.sqft) : "");
+      setAddress(r.address ?? "");
+      setCity(r.city ?? "");
+      setStateUS(r.state ?? "");
+      setZip(r.zip ?? "");
+      setDescription(r.description ?? "");
+
+      setPhotoUrls(Array.isArray(r.photo_urls) ? r.photo_urls : []);
+      setVideoUrls(Array.isArray(r.video_urls) ? r.video_urls : []);
+      setThumbnailUrl(r.thumbnail_url ?? (r.photo_urls?.[0] ?? null));
 
       setLoading(false);
     })();
@@ -114,14 +126,56 @@ export function EditListingForm({ listingId }: { listingId: string }) {
     };
   }, [listingId, router, supabase]);
 
+  async function uploadToBucket(bucket: "listing-photos" | "listing-videos", file: File) {
+    const ext = file.name.split(".").pop() || "bin";
+    const path = `${listingId}/${crypto.randomUUID()}.${ext}`;
+
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      upsert: false,
+      contentType: file.type,
+    });
+    if (error) throw error;
+
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function addPhoto(file: File) {
+    setErr(null);
+    setOk(null);
+    const url = await uploadToBucket("listing-photos", file);
+    const next = [...photoUrls, url];
+    setPhotoUrls(next);
+    if (!thumbnailUrl) setThumbnailUrl(url);
+  }
+
+  async function addVideo(file: File) {
+    setErr(null);
+    setOk(null);
+    const url = await uploadToBucket("listing-videos", file);
+    const next = [...videoUrls, url];
+    setVideoUrls(next);
+  }
+
+  function removePhoto(url: string) {
+    const next = photoUrls.filter((u) => u !== url);
+    setPhotoUrls(next);
+    if (thumbnailUrl === url) setThumbnailUrl(next[0] ?? null);
+  }
+
+  function removeVideo(url: string) {
+    const next = videoUrls.filter((u) => u !== url);
+    setVideoUrls(next);
+  }
+
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     if (!row) return;
 
     setSaving(true);
     setErr(null);
+    setOk(null);
 
-    // Convert numeric fields safely
     const priceNum = price.trim() ? Number(price) : null;
     const bedsNum = beds.trim() ? Number(beds) : null;
     const bathsNum = baths.trim() ? Number(baths) : null;
@@ -138,19 +192,20 @@ export function EditListingForm({ listingId }: { listingId: string }) {
       state: stateUS.trim() || null,
       zip: zip.trim() || null,
       description: description.trim() || null,
+
+      photo_urls: photoUrls,
+      video_urls: videoUrls,
+      thumbnail_url: thumbnailUrl,
     };
 
-    const { error } = await supabase
-      .from("listings")
-      .update(payload)
-      .eq("id", row.id);
-
+    const { error } = await supabase.from("listings").update(payload).eq("id", row.id);
     if (error) {
       setErr(error.message);
       setSaving(false);
       return;
     }
 
+    setOk("Saved!");
     setSaving(false);
     router.push(`/listing/${row.id}`);
   }
@@ -160,23 +215,19 @@ export function EditListingForm({ listingId }: { listingId: string }) {
   if (!row) return null;
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-white">
-            Edit Listing
-          </h1>
-          <p className="text-white/70">Update the details and save changes.</p>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white">Edit Listing</h1>
+          <p className="text-white/70">Update details, manage photos/videos, and choose a thumbnail.</p>
         </div>
         <Button variant="secondary" onClick={() => router.push(`/listing/${row.id}`)}>
           Back
         </Button>
       </div>
 
-      <form
-        onSubmit={onSave}
-        className="rounded-2xl border border-[#2a2a2a] bg-[#0f0f0f] p-6"
-      >
+      <form onSubmit={onSave} className="rounded-2xl border border-[#2a2a2a] bg-[#0f0f0f] p-6">
+        {/* BASIC FIELDS */}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <label className="text-sm text-white/70">Title</label>
@@ -199,7 +250,7 @@ export function EditListingForm({ listingId }: { listingId: string }) {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3 md:col-span-1">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-sm text-white/70">Beds</label>
               <input
@@ -278,17 +329,132 @@ export function EditListingForm({ listingId }: { listingId: string }) {
           </div>
         </div>
 
+        {/* MEDIA SECTION */}
+        <div className="mt-8 border-t border-white/10 pt-6">
+          <h2 className="text-xl font-bold text-white">Media</h2>
+          <p className="mt-1 text-sm text-white/70">
+            Add/remove photos and videos. Select one photo as the thumbnail.
+          </p>
+
+          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+            {/* Photos */}
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-white">Photos</div>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      try {
+                        await addPhoto(f);
+                      } catch (ex: any) {
+                        setErr(ex?.message ?? "Photo upload failed");
+                      }
+                    }}
+                  />
+                  <span className="rounded-xl bg-[#D4AF37] px-3 py-2 text-sm font-bold text-black">
+                    + Add Photo
+                  </span>
+                </label>
+              </div>
+
+              {photoUrls.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-white/70">
+                  No photos yet.
+                </div>
+              ) : (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {photoUrls.map((u) => (
+                    <div key={u} className="rounded-xl border border-white/10 bg-black/40 p-2">
+                      <img src={u} alt="photo" className="h-32 w-full rounded-lg object-cover" />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setThumbnailUrl(u)}
+                          className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+                            thumbnailUrl === u ? "bg-[#D4AF37] text-black" : "bg-white/10 text-white"
+                          }`}
+                        >
+                          {thumbnailUrl === u ? "Thumbnail" : "Set thumbnail"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(u)}
+                          className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Videos */}
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-white">Videos</div>
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      try {
+                        await addVideo(f);
+                      } catch (ex: any) {
+                        setErr(ex?.message ?? "Video upload failed");
+                      }
+                    }}
+                  />
+                  <span className="rounded-xl bg-[#D4AF37] px-3 py-2 text-sm font-bold text-black">
+                    + Add Video
+                  </span>
+                </label>
+              </div>
+
+              {videoUrls.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-white/70">
+                  No videos yet.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {videoUrls.map((u) => (
+                    <div key={u} className="rounded-xl border border-white/10 bg-black/40 p-3">
+                      <video src={u} controls className="w-full rounded-lg" />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeVideo(u)}
+                          className="rounded-lg bg-red-500/20 px-2 py-1 text-xs font-semibold text-red-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ACTIONS */}
         <div className="mt-6 flex items-center gap-3">
           <Button type="submit" disabled={saving}>
             {saving ? "Saving..." : "Save changes"}
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => router.push(`/listing/${row.id}`)}
-          >
-            Cancel
-          </Button>
+          {ok && <span className="text-sm text-green-300">{ok}</span>}
+          {err && <span className="text-sm text-red-200">{err}</span>}
         </div>
       </form>
     </div>
