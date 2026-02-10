@@ -16,49 +16,63 @@ type MyListingRow = {
 };
 
 export function MyListings() {
-  const supabase = supabaseBrowser();
+  // ✅ IMPORTANT: create the Supabase client ONCE
+  const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [rows, setRows] = useState<MyListingRow[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
-      setLoading(true);
-      setErr(null);
+      try {
+        setLoading(true);
+        setErr(null);
 
-      const { data: userData } = await supabase.auth.getUser();
-      const uid = userData.user?.id ?? null;
-      setUserId(uid);
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr) throw userErr;
 
-      if (!uid) {
-        window.location.href = "/login";
-        return;
+        const uid = userData.user?.id ?? null;
+
+        if (!uid) {
+          // If not logged in, redirect once
+          window.location.href = "/login";
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("listings")
+          .select("id,title,price,city,state,zip,created_at")
+          .eq("owner_id", uid)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        if (!cancelled) {
+          setRows((data as MyListingRow[]) ?? []);
+        }
+      } catch (e: any) {
+        console.error(e);
+        if (!cancelled) {
+          setErr(e?.message ?? "Unknown error");
+          setRows([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-
-      const { data, error } = await supabase
-        .from("listings")
-        .select("id,title,price,city,state,zip,created_at")
-        .eq("owner_id", uid)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error(error);
-        setErr(error.message);
-        setRows([]);
-      } else {
-        setRows((data as any) ?? []);
-      }
-
-      setLoading(false);
     })();
-  }, [supabase]);
 
-  const hasListings = useMemo(() => rows.length > 0, [rows]);
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   if (loading) return <div className="text-white/75">Loading…</div>;
   if (err) return <div className="text-red-400">Error: {err}</div>;
+
+  const hasListings = rows.length > 0;
 
   return (
     <div className="space-y-6">
@@ -108,12 +122,6 @@ export function MyListings() {
           ))}
         </div>
       )}
-
-      {userId ? (
-        <div className="text-xs text-white/50">
-          Signed in as: {userId}
-        </div>
-      ) : null}
     </div>
   );
 }
